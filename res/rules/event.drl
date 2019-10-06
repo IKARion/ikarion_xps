@@ -1,0 +1,613 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.base.domain.Course;
+import de.ikarion.xps.base.domain.Member;
+import de.ikarion.xps.base.domain.Group;
+import de.ikarion.xps.base.domain.Grouping;
+import de.ikarion.xps.base.domain.Module;
+import de.ikarion.xps.base.domain.Wiki;
+import de.ikarion.xps.base.domain.Quiz;
+import de.ikarion.xps.base.domain.Forum;
+import de.ikarion.xps.base.domain.Discussion;
+import de.ikarion.xps.base.domain.Post;
+import de.ikarion.xps.base.domain.Page;
+import de.ikarion.xps.base.domain.Content;
+import de.ikarion.xps.base.domain.Role;
+
+dialect "mvel"
+
+/* assigned viewed created updated deleted removed unassigned assigned completed */
+
+//-- EVENT ----------------------------------------
+
+rule "event:discard"
+  agenda-group "event"
+  salience -1 // last rule in this agenda-group; mechanism to evaluate just the most recent event
+when
+  $event: Event( discarded == false )
+then
+  modify($event) { discard(); }
+  add(g, drools.getRule(), null)
+end
+
+rule "event:exist"
+  agenda-group "event"
+  no-loop // (!) avoid the re-activation due to clock update
+when
+  $event: Event( discarded == false )
+  Boolean ( this == true ) from ( $event.courseid != null )
+  Boolean ( this == true ) from ( $event.timecreated != null )
+  $time: Long() from (Long)$event.timecreated
+  $clock: Clock( )
+then
+  modify($clock) { value($time); }
+  update($clock)
+  add(g, drools.getRule(), null)
+end
+
+//-- DETECT(+) ----------------------------------------
+
+rule "event:detect" extends "event:exist"
+  agenda-group "event"
+when
+  $course: Course( id == $event.courseid )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:related:detect" extends "event:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.relateduserid != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:member:detect" extends "event:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.userid != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:group:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "group(?!ing)(.){0,}" ) from $event.target
+  Boolean( this == true ) from ( $event.objectid != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:grouping:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "grouping(.){0,}" ) from $event.target
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:role:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "role(.){0,}" ) from $event.target
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:forum:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_forum" ) from $event.component
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:wiki:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_wiki" ) from $event.component
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:page:detect" extends "event:wiki:detect"
+  agenda-group "event"
+when
+  String ( this matches "page" ) from $event.target
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:post:detect" extends "event:forum:detect"
+  agenda-group "event"
+when
+  String ( this matches "(assessable|post)" ) from $event.target
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:discussion:detect" extends "event:forum:detect"
+  agenda-group "event"
+when
+  String ( this matches "discussion" ) from $event.target
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- INSERT ----------------------------------------
+
+rule "event:course:insert" extends "event:exist"
+  agenda-group "event"
+when
+  not ( Course( id == $event.courseid ) )
+then
+  Course course = new Course($time, $event.courseid)
+  insert(course)
+  add(g, drools.getRule(), $event.courseid)
+end
+
+rule "event:member:insert" extends "event:member:detect"
+  agenda-group "event"
+when
+  not ( Member( parents contains $course , id == $event.userid ) )
+then
+  Member member = new Member($time, $event.userid, $course)
+  insert(member)
+  add(g, drools.getRule(), $event.userid)
+end
+
+rule "event:related:insert" extends "event:related:detect"
+  agenda-group "event"
+when
+  not ( Member( parents contains $course , id == $event.relateduserid ) )
+then
+  Member member = new Member($time, $event.relateduserid, $course)
+  insert(member)
+  add(g, drools.getRule(), $event.relateduserid)
+end
+
+rule "event:group:insert" extends "event:group:detect"
+  agenda-group "event"
+when
+  not ( Group( parents contains $course , id == $event.objectid ) )
+then
+  Group group = new Group($time, $event.objectid, $course)
+  insert(group)
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:group-groupid:insert" extends "event:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.groupid != null )
+  not ( Group( parents contains $course, id == $event.groupid ) )
+then
+  Group group = new Group($time, $event.groupid, $course)
+  insert(group)
+  add(g, drools.getRule(), $event.groupid)
+end
+
+rule "event:grouping:insert" extends "event:grouping:detect"
+  agenda-group "event"
+when
+  not ( Grouping( parents contains $course , id == $event.objectid ) )
+then
+  Grouping grouping = new Grouping($time, $event.objectid, $course)
+  insert(grouping)
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:role:insert" extends "event:role:detect"
+  agenda-group "event"
+when
+  not ( Role( parents contains $course , id == $event.objectid ) )
+then
+  Role role = new Role($time, $event.objectid, $course)
+  insert(role)
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:wiki:insert" extends "event:wiki:detect"
+  agenda-group "event"
+when
+  not ( Wiki( parents contains $course , context == $event.contextinstanceid ) )
+then
+  Wiki wiki = new Wiki($time, $event.contextinstanceid, $course)
+  insert(wiki)
+  add(g, drools.getRule(), $event.contextinstanceid)
+end
+
+rule "event:forum:insert" extends "event:forum:detect"
+  agenda-group "event"
+when
+  not ( Forum( parents contains $course , context == $event.contextinstanceid ) )
+then
+  Forum forum = new Forum($time, $event.contextinstanceid, $course)
+  insert(forum)
+  add(g, drools.getRule(), $event.contextinstanceid)
+end
+
+rule "event:page:insert" extends "event:page:detect"
+  agenda-group "event"
+when
+  not ( Page( parents contains $course, id == $event.objectid ) )
+then
+  Page page = new Page($time, $event.objectid, $course)
+  insert(page)
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:post:insert" extends "event:post:detect"
+  agenda-group "event"
+when
+  not ( Post( parents contains $course, id == $event.objectid ) )
+then
+  Post post = new Post($time, $event.objectid, $course)
+  insert(post)
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:discussion:insert " extends "event:post:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.discussionid != null )
+  not ( Discussion( parents contains $course , id == $event.discussionid ) )
+then
+  Discussion discussion = new Discussion($time, $event.discussionid, $course)
+  insert(discussion)
+  add(g, drools.getRule(), $event.discussionid)
+end
+
+//-- UPDATE(!) ----------------------------------------
+
+rule "event:page:assign" extends "event:page:detect"
+  agenda-group "event"
+when
+  $wiki: Wiki( parents contains $course , context == $event.contextinstanceid )
+  $page: Page( $course memberOf parents , id == $event.objectid , $wiki not memberOf parents )
+then
+  modify($page) { parent($time, $wiki); }
+  update($page) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:post:assign" extends "event:post:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.discussionid != null )
+  $discussion: Discussion( parents contains $course , id == $event.discussionid )
+  $post: Post( $course memberOf parents , id == $event.objectid , $discussion not memberOf parents )
+then
+  modify($post) { parent($time, $discussion); }
+  update($post) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:discussion:assign" extends "event:discussion:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.forumid != null )
+  $forum: Forum( $course memberOf parents , context == $event.contextinstanceid ) // , id == $event.forumid )
+  $discussion: Discussion( parents contains $course , id == $event.objectid , $forum not memberOf parents )
+then
+  modify($discussion) { parent($time, $forum); }
+  update($discussion) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $event.objectid)
+end
+
+//-- UPDATE(*) ----------------------------------------
+
+rule "event:page:change" extends "event:page:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.newcontent != null )
+  $page: Page( parents contains $course , id == $event.objectid , patched == null || patched < $time )
+  $member: Member( parents contains $course , id == $event.userid )
+then
+  modify($page) { value($time, $member, (String)$event.newcontent); }
+  update($page) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:post:change" extends "event:post:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.content != null )
+  $post: Post( parents contains $course , id == $event.objectid , patched == null || patched < $time )
+  $member: Member( parents contains $course , id == $event.userid )
+then
+  modify($post) { value($time, $member, (String)$event.content); }
+  update($post) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $event.objectid)
+end
+
+rule "event:role:update" extends "event:role:detect"
+  agenda-group "event"
+when
+  $role: Role ( parents contains $course, id == $event.objectid )
+  Boolean ( this == true ) from ( $event.relateduserid != null )
+  $member: Member( parents contains $course, id == $event.relateduserid )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:grouping:update" extends "event:grouping:detect"
+  agenda-group "event"
+when
+  $grouping: Grouping ( parents contains $course, id == $event.objectid )
+  Boolean ( this == true ) from ( $event.groupid != null )
+  $group: Group( parents contains $course, id == $event.groupid )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:group:update" extends "event:group:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.relateduserid != null )
+  String ( this matches ("(.){1,}_member") ) from $event.target
+  $group: Group( parents contains $course, id == $event.objectid )
+  $member: Member( parents contains $course, id == $event.relateduserid )
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- UPDATE(+) ----------------------------------------
+
+rule "event:role:attach" extends "event:role:update"
+  agenda-group "event"
+when
+  String ( this matches "assigned" ) from $event.action
+then
+  modify($role) { member($time, $member, false); }
+  add(g, drools.getRule(), $role.id)
+end
+
+rule "event:role:detach" extends "event:role:update"
+  agenda-group "event"
+when
+  String ( this matches "unassigned" ) from $event.action
+then
+  modify($role) { member($time, $member, true); }
+  add(g, drools.getRule(), $role.id)
+end
+
+rule "event:grouping:attach" extends "event:grouping:update"
+  agenda-group "event"
+when
+  String ( this matches "assigned" ) from $event.action
+then
+  modify($grouping) { group($time, $group, false); }
+  add(g, drools.getRule(), $grouping.id)
+end
+
+rule "event:grouping:detach" extends "event:grouping:update"
+  agenda-group "event"
+when
+  String ( this matches "unassigned" ) from $event.action
+then
+  modify($grouping) { group($time, $group, true); }
+  add(g, drools.getRule(), $grouping.id)
+end
+
+rule "event:group:attach" extends "event:group:update"
+  agenda-group "event"
+when
+  String ( this matches "added" ) from $event.action
+then
+  modify($group) { member($time, $member, false); }
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "event:group:detach" extends "event:group:update"
+  agenda-group "event"
+when
+  String ( this matches "removed" ) from $event.action
+then
+  modify($group) { member($time, $member, true); }
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "event:member:action:append" extends "event:member:detect"
+  agenda-group "event"
+when
+  String ( this not matches "viewed" ) from $event.action
+  $member: Member( parents contains $course , id == $event.userid , changed < $time )
+then
+  modify($member) { action($time, $event.component + " " + $event.target + " " + $event.action); }
+  update($member) // (!) notify non-property change
+  add(g, drools.getRule(), $member.id)
+end
+
+rule "event:member:view:append" extends "event:member:detect"
+  agenda-group "event"
+when
+  String ( this matches "viewed" ) from $event.action
+  $member: Member( parents contains $course , id == $event.userid , changed < $time )
+then
+  modify($member) { view($time, $event.component + " " + $event.target + " " + $event.action); }
+  update($member) // (!) notify non-property change
+  add(g, drools.getRule(), $member.id)
+end
+
+rule "event:post:visitor:append" extends "event:discussion:detect"
+  agenda-group "event"
+when
+  String ( this matches "viewed" ) from $event.action
+  $discussion: Discussion( parents contains $course , id == $event.objectid )
+  $member: Member( parents contains $course , id == $event.userid )
+  $post: Post ( $discussion memberOf parents , $member not memberOf visitors , forgotten == false )
+then
+  modify($post) { visitor($time, $member); }
+  update($post) // (!) notify non-property change
+  add(g, drools.getRule(), $post.id)
+end
+
+rule "event:page:visitor:append" extends "event:page:detect"
+  agenda-group "event"
+when
+  String ( this matches "viewed" ) from $event.action
+  $member: Member( parents contains $course , id == $event.userid )
+  $page: Page ( $course memberOf parents , $member not memberOf visitors , forgotten == false )
+then
+  modify($page) { visitor($time, $member); }
+  update($page) // (!) notify non-property change
+  add(g, drools.getRule(), $page.id)
+end
+
+//-- FORGET ----------------------------------------
+
+rule "event:role:forget" extends "event:role:detect"
+  agenda-group "event"
+when
+  String ( this matches "deleted" ) from $event.action
+  $role: Role ( parents contains $course, id == $event.objectid , forgotten == false )
+then
+  modify($role) { forget($time); }
+  update($role)
+  add(g, drools.getRule(), $role.id)
+end
+
+rule "event:grouping:forget" extends "event:grouping:detect"
+  agenda-group "event"
+when
+  String ( this matches "deleted" ) from $event.action
+  $grouping: Grouping ( parents contains $course, id == $event.objectid , forgotten == false )
+then
+  modify($grouping) { forget($time); }
+  update($grouping)
+  add(g, drools.getRule(), $grouping.id)
+end
+
+rule "event:group:forget" extends "event:group:detect"
+  agenda-group "event"
+when
+  String ( this matches "deleted" ) from $event.action  
+  $group: Group( parents contains $course , id == $event.objectid , forgotten == false )
+then
+  modify($group) { forget($time); }
+  update($group)
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "event:post:forget" extends "event:post:detect"
+  agenda-group "event"
+when
+  String ( this matches "deleted" ) from $event.action
+  $post: Post( parents contains $course , id == $event.objectid , forgotten == false )
+then
+  modify($post) { forget($time); }
+  update($post)
+  add(g, drools.getRule(), $post.id)
+end
+
+//==================================================
+
+/*
+rule "event:discussion:forget" extends "event:discussion:exist"
+  agenda-group "event"
+when
+  String ( this matches ("deleted") ) from $event.action
+  $forum: Forum( context == $context, id == $event.other("forumid") )
+  Boolean( this == true ) from ( $discussion.parents contains $forum ) 
+then
+  System.err.println("event:discussion:forget")
+  modify($discussion) { forget($time); }
+  update($discussion)
+  add(g, drools.getRule())
+end
+
+rule "event:discussion:parent:move:update" extends "event:discussion:exist"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.other("toforumid") != null )
+  $forum: Forum( context == $context, id == $event.other("toforumid") )
+then
+  System.err.println("event:discussion:parent:move:update")
+  modify($discussion) { parent($time, $forum); }
+  add(g, drools.getRule())
+end
+
+rule "event:discussion:parent:context:update" extends "event:discussion:exist"
+  agenda-group "event"
+when
+  $forum: Forum( context == $context )
+  Boolean( this == true ) from ( $discussion.parents contains $context )
+  Boolean( this == false ) from ( $discussion.parents contains $forum )
+then
+  System.err.println("event:discussion:parent:context:update")
+  modify($discussion) { parent($time, $forum); }
+  add(g, drools.getRule())
+end
+
+rule "event:discussion:parent:forum:update" extends "event:discussion:exist"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.other("forumid") != null )
+  $forum: Forum( context == $context, id == $event.other("forumid") )
+then
+  System.err.println("event:discussion:parent:forum:update")
+  modify($discussion) { parent($time, $forum); }
+  add(g, drools.getRule())
+end
+
+rule "event:discussion:view:insert" extends "event:discussion"
+  agenda-group "event"
+when
+  String ( this matches "viewed" ) from $event.action
+  not ( Discussion( parents contains $context, id == $event.objectid ) )
+then
+  System.err.println("event:discussion:view:insert")
+  Discussion discussion = new Discussion($time, $context, $event.objectid)
+  insert(discussion)
+  add(g, drools.getRule())
+end
+*/
+
+/*
+rule "event:wiki-instanceid:insert" extends "event:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.modulename == "wiki" )
+  Boolean( this == true ) from ( $event.instanceid != null )
+  not ( Wiki( parents contains $course , id == $event.instanceid ) )
+then
+  System.err.println("rule:event:wiki-instanceid:insert")
+  Wiki wiki = new Wiki($time, $event.instanceid, $course)
+  insert(wiki)
+  add(g, drools.getRule())
+end
+*/
+
+/*
+rule "event:forum-instanceid:insert" extends "event:detect"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.modulename == "forum" )
+  Boolean( this == true ) from ( $event.instanceid != null )
+  not ( Forum( parents contains $course, id == $event.instanceid ) )
+then
+  System.err.println("rule:event:forum-instanceid:insert")
+  Forum forum = new Forum($time, $event.instanceid, $course)
+  insert(forum)
+  add(g, drools.getRule())
+end
+
+rule "event:forum-forumid:insert" extends "event:forum"
+  agenda-group "event"
+when
+  Boolean( this == true ) from ( $event.forumid != null )
+  not ( Forum( parents contains $course , id == $event.forumid ) )
+then
+  System.err.println("rule:event:forum-forumid:insert")
+  Forum forum = new Forum($time, $event.forumid, $course)
+  insert(forum)
+  add(g, drools.getRule())
+end
+*/

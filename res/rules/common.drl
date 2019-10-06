@@ -1,0 +1,75 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import java.util.*;
+import java.lang.*;
+
+import org.drools.core.definitions.rule.impl.RuleImpl;
+
+import de.ikarion.xps.Utility;
+
+import de.ikarion.xps.base.Fact;
+
+import de.ikarion.xps.data.Data;
+import de.ikarion.xps.data.Query;
+
+import de.ikarion.xps.data.moodle.Event;
+import de.ikarion.xps.base.domain.Clock;
+
+import de.ikarion.xps.engine.Inference;
+
+global de.ikarion.xps.engine.Inference g;
+
+dialect "mvel"
+
+function boolean has(Inference inference, String agenda, String rule) {
+  return inference.contains(agenda, rule);
+}
+
+function void add(Inference inference, RuleImpl rule, Object user) {
+  if (user != null) System.err.println(rule.getName() + " " + user);
+  inference.add(rule.getAgendaGroup(), rule.getName(), user);
+}
+
+//-- GARBAGE ----------------------------------------
+
+rule "common:fact:retract"
+  agenda-group "common"
+  salience -1 // last rule in this agenda-group 
+when
+  $fact: Fact( )
+  Boolean ( this == true ) from ( $fact.forgotten == true )
+then
+  retract($fact)
+  add(g, drools.getRule(), $fact.hashCode())
+end
+
+//-- WATCHDOG ----------------------------------------
+
+/*
+rule "common:watchdog"
+  agenda-group "common"
+  timer( int: 10s )
+  salience 999
+when
+  eval ( true )
+then
+  System.err.println("rule:common:watchdog")
+end
+*/
+
+//-- TIMER ----------------------------------------
+
+/*
+rule "timer"
+  agenda-group "common"
+  timer( int: 0s 5s )
+when
+  eval ( true )
+then
+  add(g, drools.getRule(), null)
+end
+*/

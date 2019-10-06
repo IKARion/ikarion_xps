@@ -1,0 +1,95 @@
+/*
+ * 2018, m6c7l
+ */
+
+/*
+ * https://stackoverflow.com/questions/11237303/drools-recursive-rules-not-firing
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.engine.test.fibonacci.Number;
+
+dialect "mvel"
+
+/*
+ * The Fibonacci sequence is a series of numbers:
+ * 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, ...
+ * The next number is the sum of the two numbers before it.
+ */
+    
+/*
+ * ... w/o inline evaluation of getters.
+ * In order to be cached in the working memory for conditions,
+ * properties must be accessible via conventional getters in POJO.
+ */
+
+// 1. create new facts for remaining (n-1) Fonacci numbers
+rule "fibonacci:c:bootstrap"
+when
+     not Number( (index == 1) )
+     $f: Number( (value == -1) )
+then
+     insert(new Number($f.index - 1));
+     add(g, drools.getRule(), null);
+end
+
+// 2. prepare the first two Fibonacci numbers: F(1) = 1, F(2) = 1
+rule "fibonacci:u:initialize"
+when
+     $f: Number( (index <= 2) && (value == -1) )
+then                 
+     modify($f) { value = 1L }; // $f.setValue(1L); update($f);
+     add(g, drools.getRule(), null);
+end
+
+// 3. do calculation for all Fibonacci numbers after the first two which are known
+rule "fibonacci:u:calculate"
+when
+     $f1: Number( $i1: index, (value != -1) )
+     $f2: Number( $i2: index, ($i2 == $i1 + 1) && (value != -1) )
+     $f3: Number( $i3: index, ($i3 == $i2 + 1) && (value == -1) )            
+then    
+     modify($f3) { value = $f1.value + $f2.value };
+     add(g, drools.getRule(), $f3);
+end
+
+/*
+ * ... w/ inline evaluation of getters ...
+ * This Java-dialectic approach is property-less but more computational
+ * expensive due to potentially more rule activations, therefore
+ * considered bad practice in Drools. 
+ */
+
+//dialect "java"
+//
+//rule "fibonacci:facts"
+//when
+//    $f: Number()
+//then
+//end
+//
+//rule "fibonacci:c:bootstrap" extends "fibonacci:facts"
+//when
+//    eval(($f.getIndex() != 1) && ($f.getValue() == -1))
+//then
+//    insert(new Number($f.getIndex() - 1));
+//end
+//
+//rule "fibonacci:u:initialize" extends "fibonacci:facts" 
+//when
+//    eval(($f.getIndex() <= 2) && ($f.getValue() == -1))
+//then         
+//    modify($f) { setValue(1L) };
+//    g.add($f);
+//end
+//
+//rule "fibonacci:u:calculate" extends "fibonacci:facts"
+//when
+//    $f1: Number( eval( $f.getValue() != -1 ) )
+//    $f2: Number( eval( ($f2.getIndex() == $f1.getIndex() + 1) && ($f2.getValue() != -1) ) )
+//    $f3: Number( eval( ($f3.getIndex() == $f2.getIndex() + 1) && ($f3.getValue() == -1) ) )            
+//then
+//    modify($f3) { setValue($f1.getValue() + $f2.getValue()) };
+//    g.add($f3);
+//end

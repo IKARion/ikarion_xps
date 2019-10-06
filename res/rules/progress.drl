@@ -1,0 +1,215 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+dialect "mvel"
+
+rule "progress:main"
+  agenda-group "progress"
+when
+  $clock: Clock ( )
+  $course: Course ( )
+  $group: Group ( parents contains $course , forgotten == false )
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- TASK ----------------------------------------
+
+rule "progress:task:forget"
+  agenda-group "progress"
+when
+  Clock ( $time: value )
+  $course: Course ( )  
+  $task: Task ( parents contains $course , $time > $task.to , forgotten == false )
+then
+  modify($task) { forget($time); }
+  update($task)
+  add(g, drools.getRule(), $task.id)
+end
+
+rule "progress:task:dispose"
+  agenda-group "progress"
+when
+  Clock ( $time: value )
+  $course: Course ( )
+  $task: Task ( parents contains $course )
+  Boolean ( this == true ) from ( $task.forgotten == true ) 
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- AWARENESS ----------------------------------------
+
+rule "progress:awareness:forget" extends "progress:task:dispose"
+  agenda-group "progress"
+when
+  $awareness: Awareness ( submitted < $task.to , forgotten == false )
+then
+  modify($awareness) { forget($time); }
+  update($awareness)
+  add(g, drools.getRule(), $awareness.id)
+end
+
+//-- CONTENT ----------------------------------------
+
+rule "progress:content:forget" extends "progress:task:dispose"
+  agenda-group "progress"
+when
+  $group: Group ( forgotten == false ) from $task.groups
+  $member: Member ( ) from $group.members
+  $content: Content ( members contains $member , created < $task.to , forgotten == false )
+then
+  modify($content) { forget($time); }
+  update($content)
+  add(g, drools.getRule(), $content.id)
+end
+
+//-- DOMAIN ----------------------------------------
+
+rule "progress:group:reset" extends "progress:task:dispose"
+  agenda-group "progress"
+when
+  $group: Group ( forgotten == false ) from $task.groups
+then
+  modify($group) { annotation($time, "gini", null); }
+  update($group) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "progress:member:reset" extends "progress:group:reset"
+  agenda-group "progress"
+when  
+  $member: Member ( forgotten == false ) from $group.members
+then
+  modify($member) { annotation($time, "forum", null); }
+  modify($member) { annotation($time, "wiki", null); }
+  update($member) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $member.id)
+end
+
+//-- PROMPT ----------------------------------------
+
+rule "progress:prompt:member:forget" extends "progress:member:reset"
+  agenda-group "progress"
+when 
+  $prompt: Prompt ( parent == $member , forgotten == false )
+then
+  modify($prompt) { forget($time); }
+  update($prompt)
+  add(g, drools.getRule(), $prompt.parent)
+end
+
+rule "progress:prompt:group:forget" extends "progress:group:reset"
+  agenda-group "progress"
+when 
+  $prompt: Prompt ( parent == $group , forgotten == false )
+then
+  modify($prompt) { forget($time); }
+  update($prompt)
+  add(g, drools.getRule(), $prompt.parent)
+end
+
+//==================================================
+
+/*
+rule "progress:task:shred"
+  agenda-group "progress"
+when
+  $course: Course( )
+  accumulate (
+    $task: Task( parents contains $course , forgotten == false ) ,
+    $min: min( $task.from )
+  ) 
+  $clock: Clock( $time: value )
+then
+  //System.err.println("rule:progress:shred " + $min)
+  //add(g, drools.getRule())
+end
+
+rule "progress:content:shred" extends "progress:task:shred"
+  agenda-group "progress"
+when
+  $content: Content( parents contains $course , created < (Long)$min , (Long)$min < $time , forgotten == false )
+then
+  System.err.println("rule:progress:content:shred " + $content.id + " " + $course.id)
+  modify($content) { forget($time); }
+  update($content)
+  add(g, drools.getRule())
+end
+
+rule "progress:assessment:shred" extends "progress:task:shred"
+  agenda-group "progress"
+when
+  $member: Member( parents contains $course )
+  $assessment: Assessment( id == $member , created < (Long)$min , (Long)$min < $time , forgotten == false )
+then
+  System.err.println("rule:progress:assessment:shred " + $member.id + " " + $course.id)
+  modify($assessment) { forget($time); }
+  update($assessment)
+  add(g, drools.getRule())
+end
+*/
+
+/*
+rule "progress:task:blank"
+  agenda-group "progress"
+when
+  Clock( $time: value )
+  $course: Course( )
+  not ( Task ( parents contains $course , forgotten == false ) )
+then
+  //System.err.println("rule:progress:task:blank " + $course.id)
+  //add(g, drools.getRule())
+end
+
+rule "progress:group:blank" extends "progress:task:blank"
+  agenda-group "progress"
+when
+  $group: Group( parents contains $course ) //, changed < $time )
+  Boolean ( this == true ) from ( $group.annotation("gini") != null ) 
+then
+  System.err.println("rule:progress:group:blank " + $group.id + " " + $course.id)
+  modify($group) { annotation($time, "gini", null); }
+  //update($group) // (!) notify non-property change for inference
+  add(g, drools.getRule())
+end
+
+rule "progress:member:blank" extends "progress:task:blank"
+  agenda-group "progress"
+when  
+  $member: Member( parents contains $course ) //, changed < $time )
+  Boolean ( this == true ) from ( $member.annotation("forum") != null ) 
+  Boolean ( this == true ) from ( $member.annotation("wiki") != null ) 
+then
+  System.err.println("rule:progress:member:blank " + $member.id + " " + $course.id)
+  modify($member) { annotation($time, "forum", null); }
+  modify($member) { annotation($time, "wiki", null); }
+  //update($member) // (!) notify non-property change for inference
+  add(g, drools.getRule())
+end
+
+rule "progress:display:blank" extends "progress:member:blank"
+  agenda-group "progress"
+when 
+  $display: Display( id == $member ) //, changed < $time )
+then
+  System.err.println("rule:progress:display:blank " + $member.id + " " + $course.id)
+  modify($display) { assessment(null, null); }
+  //update($display)
+  add(g, drools.getRule())
+end
+
+rule "progress:preparation:blank" extends "progress:group:blank"
+  agenda-group "progress"
+when 
+  $preparation: Preparation( id == $group ) //, changed < $time )
+then
+  System.err.println("rule:progress:preparation:blank " + $group.id + " " + $course.id)
+  modify($preparation) { apply(null, null); }
+  //update($preparation)
+  add(g, drools.getRule())
+end
+*/

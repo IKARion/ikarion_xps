@@ -1,0 +1,550 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+dialect "mvel"
+
+/* in progress
+ * 
+ * - delete, not reset stuff if task expired everywhere
+ * - no ids of member or group in prompts
+ */
+
+//------------------------------
+
+query "availabilities" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , !forgotten )
+  result: Availability( parents contains group_ , !forgotten )
+end
+
+query "availability" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Availability( parents contains group_ )
+end
+
+//------------------------------
+
+query "moods" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , !forgotten )
+  result: Mood( parents contains group_ , !forgotten )
+end
+
+query "mood" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Mood( parents contains group_ )
+end
+
+//------------------------------
+
+query "todos_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member( ) from group_.members
+  result: Todo( parents contains member_ , collective , !forgotten )
+end
+
+query "todos_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Todo( parents contains member_ , !collective , !forgotten )
+end
+
+query "todos" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , !forgotten )
+  result: Todo( parents contains member_ , !forgotten )
+end
+
+//------------------------------
+
+query "assessments_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member( ) from group_.members
+  result: Assessment( parents contains member_ , !forgotten )
+end
+
+query "assessments:group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member( ) from group_.members
+  $assessment: Assessment( parents contains member_ , !forgotten , $latest: created )
+  not Assessment( parents contains member_ , created > $latest )   
+  result: Assessment( this == $assessment )
+end
+
+query "assessments_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Assessment( parents contains member_ , !forgotten )
+end
+
+query "assessments" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , !forgotten )
+  result: Assessment( parents contains member_ , !forgotten )
+end
+
+//------------------------------
+
+query "displays" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , !forgotten )
+  result: Display( parent == member_ , !forgotten )
+end
+
+query "display" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Display( parent == member_ )
+end
+
+//------------------------------
+
+query "preparations" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , !forgotten )
+  result: Preparation( parent == group_ , !forgotten )
+end
+
+query "preparation" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Preparation( parent == group_ )
+end
+
+//------------------------------
+
+query "roles" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Role( parents contains course_ , !forgotten )
+end
+
+query "role" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Role( parents contains course_ , id == _id )
+end
+
+query "roles_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Role( parents contains course_ , members contains member_ , !forgotten )
+end
+
+//------------------------------
+
+query "wiki" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Wiki( parents contains course_ , id == _id )
+end
+
+query "wikis" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Wiki( parents contains course_ , !forgotten )
+end
+
+query "wikis_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member( ) from group_.members
+  page_: Page( parents contains course_ , members contains member_ , !forgotten ) 
+  result: Wiki( !forgotten ) from page_.parents
+end
+
+query "wikis:group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  wiki_: Wiki( parents contains course_ , !forgotten )
+  pages_wiki_: List ( size > 0 ) from collect (
+    Page ( parents contains course_ , !forgotten )
+  )
+  pages_group_: List ( size > 0 ) from accumulate (
+    $member: Member ( ) from group_.members
+      and
+    $page: Page ( parents contains course_ , members contains $member , !forgotten ) ;
+    collectList( $page )
+  )
+  Boolean ( this == true ) from pages_wiki_.size == pages_group_.size
+  result: Wiki() from wiki_
+end
+
+//------------------------------
+
+query "discussion" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Discussion( parents contains course_ , id == _id )
+end
+
+query "discussions" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Discussion( parents contains course_ , !forgotten )
+end
+
+query "discussions_forum" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  forum_: Forum( parents contains course_ , id == _id )
+  result: Discussion( parents contains forum_ , !forgotten )
+end
+
+query "discussions_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member() from group_.members
+  post_: Post( parents contains course_ , members contains member_ , !forgotten ) 
+  result: Discussion( !forgotten ) from post_.parent
+end
+
+query "discussions:group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )  
+  discussion_: Discussion( parents contains course_ , !forgotten )
+  posts_discussion_: List ( size > 0 ) from collect (
+    Post ( parents contains discussion_ , !forgotten )
+  )
+  posts_group_: List ( size > 0 ) from accumulate (
+    $member: Member ( ) from group_.members
+      and
+    $post: Post ( parents contains discussion_ , members contains $member , !forgotten ) ;
+    collectList( $post )
+  )
+  Boolean ( this == true ) from posts_discussion_.size == posts_group_.size
+  result: Discussion() from discussion_
+end
+
+//------------------------------
+
+query "module" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Module( parents contains course_ , id == _id )
+end
+
+query "modules" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Module( parents contains course_ , !forgotten )
+end
+
+//------------------------------
+
+query "forum" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Forum( parents contains course_ , id == _id )
+end
+
+query "forums" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Forum( parents contains course_ , !forgotten )
+end
+
+query "forums_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  member_: Member( ) from group_.members
+  post_: Post( parents contains course_ , members contains member_ , !forgotten )
+  discussion_: Discussion( ) from post_.parents
+  result: Forum( !forgotten ) from discussion_.parents
+end
+
+query "forums:group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )  
+  forum_: Forum( parents contains course_ , !forgotten )
+  discussion_: Discussion( parents contains forum_ )
+  posts_forum_: List ( size > 0 ) from collect (
+    Post ( parents contains discussion_ , !forgotten )
+  )
+  posts_group_: List ( size > 0 ) from accumulate (
+    $member: Member ( ) from group_.members
+      and
+    $post: Post ( parents contains discussion_ , members contains $member , !forgotten ) ;
+    collectList( $post )
+  )
+  Boolean ( this == true ) from posts_forum_.size == posts_group_.size
+  result: Forum() from forum_
+end
+
+//------------------------------
+
+query "content" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Content( parents contains course_ , id == _id )
+end
+
+query "contents" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Content( parents contains course_ , !forgotten )
+end
+
+query "contents!" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  content_: Content( parents contains course_ , !forgotten )
+  Boolean ( this == true ) from ( content_.annotation("classification") != null )
+  result: Content() from content_
+end
+
+query "contents!member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  content_: Content( parents contains course_ , members contains member_ , !forgotten )
+  Boolean ( this == true ) from ( content_.annotation("classification") != null )
+  result: Content() from content_
+end
+
+query "contents_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Content( parents contains course_ , members contains member_ , !forgotten ) 
+end
+
+query "contents!group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  content_: Content( parents contains course_ , members contains member_ , !forgotten ) 
+  Boolean ( this == true ) from ( content_.annotation("classification") != null )
+  result: Content() from content_
+end
+
+query "contents_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  result: Content( parents contains course_ , members contains member_ , !forgotten ) 
+end
+
+//------------------------------
+
+query "pages!member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  page_: Page( parents contains course_ , members contains member_ , !forgotten )
+  Boolean ( this == true ) from ( page_.annotation("classification") != null )
+  result: Page() from page_
+end
+
+query "pages_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Page( parents contains course_ , members contains member_ , !forgotten ) 
+end
+
+query "pages!group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  page_: Page( parents contains course_ , members contains member_ , !forgotten )
+  Boolean ( this == true ) from ( page_.annotation("classification") != null )
+  result: Page() from page_
+end
+
+query "pages_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  result: Page( parents contains course_ , members contains member_ , !forgotten ) 
+end
+
+query "page" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Page( parents contains course_ , id == _id )
+end
+
+query "pages" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Page( parents contains course_ , !forgotten )
+end
+
+query "pages_wiki" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  wiki_: Wiki( parents contains course_ , id == _id )
+  result: Page( parents contains wiki_ , !forgotten ) 
+end
+
+//------------------------------
+
+query "post" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Post( parents contains course_ , id == _id )
+end
+
+query "posts" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Post( parents contains course_ , !forgotten )
+end
+
+query "posts_forum" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  forum_: Forum( parents contains course_ , id == _id )
+  discussion_: Discussion( parents contains forum_ )
+  result: Post( parents contains discussion_ , !forgotten ) 
+end
+
+query "posts_discussion" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  discussion_: Discussion( parents contains course_ , id == _id )
+  result: Post( parents contains discussion_ , !forgotten )
+end
+
+query "posts!member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  discussion_: Discussion( parents contains course_ )
+  member_: Member( parents contains course_ , id == _id )
+  post_: Post( parents contains discussion_ , members contains member_ , !forgotten ) 
+  Boolean ( this == true ) from ( post_.annotation("classification") != null )
+  result: Post() from post_
+end
+
+query "posts_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  discussion_: Discussion( parents contains course_ )
+  member_: Member( parents contains course_ , id == _id )
+  result: Post( parents contains discussion_ , members contains member_ , !forgotten ) 
+end
+
+query "posts!group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  discussion_: Discussion( parents contains course_ )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  post_: Post( parents contains discussion_ , members contains member_ , !forgotten )
+  Boolean ( this == true ) from ( post_.annotation("classification") != null )
+  result: Post() from post_
+end
+
+query "posts_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  discussion_: Discussion( parents contains course_ )
+  member_: Member( parents contains course_ )
+  group_: Group( parents contains course_ , id == _id , members contains member_ )
+  result: Post( parents contains discussion_ , members contains member_ , !forgotten ) 
+end
+
+//------------------------------
+
+query "groupings_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  group_: Group( parents contains course_ , members contains member_ )
+  result: Grouping( parents contains course_ , groups contains group_ , !forgotten )
+end
+
+query "groupings_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Grouping( parents contains course_ , groups contains group_ , !forgotten )
+end
+
+query "groupings" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Grouping( parents contains course_ , !forgotten )
+end
+
+query "grouping" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Grouping( parents contains course_ , id == _id )
+end
+
+//------------------------------
+
+query "member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Member( parents contains course_ , id == _id )
+end
+
+query "members" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Member( parents contains course_ , !forgotten )
+end
+
+//------------------------------
+
+query "groups_member" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  member_: Member( parents contains course_ , id == _id )
+  result: Group( parents contains course_ , members contains member_ , !forgotten )
+end
+
+query "groups!member" ( Object _course, Object _id, Long _from, Long _to )
+  clock_: Clock( )
+  course_: Course( id == _course )
+  task_: Task( parents contains course_ , !forgotten , clock_.value > from , clock_.value < to )
+  member_: Member( parents contains course_ , id == _id )
+  result: Group( this memberOf task_.groups , parents contains course_ , members contains member_ , !forgotten )
+end
+
+query "group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Group( parents contains course_ , id == _id )
+end
+
+query "groups" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Group( parents contains course_ , !forgotten )
+end
+
+//------------------------------
+
+query "task" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Task( parents contains course_ , id == _id )
+end
+
+query "tasks" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  result: Task( parents contains course_ , !forgotten )
+end
+
+query "tasks_group" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Task( parents contains course_ , groups contains group_ , !forgotten )
+end
+
+//------------------------------
+
+query "course" ( Object _course, Object _id, Long _from, Long _to )
+  result: Course( id == _id )
+end
+
+query "courses" ( Object _course, Object _id, Long _from, Long _to )
+  result: Course( !forgotten )
+end
+
+//------------------------------
+
+/*
+query "responses" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , !forgotten )
+  result: Response( id == group_ , !forgotten )
+end
+
+query "response" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Response( id == group_ )
+end
+*/
+
+//------------------------------
+
+/*
+query "participations" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , !forgotten )
+  result: Participation( id == group_ , !forgotten )
+end
+
+query "participation" ( Object _course, Object _id, Long _from, Long _to )
+  course_: Course( id == _course )
+  group_: Group( parents contains course_ , id == _id )
+  result: Participation( id == group_ )
+end
+*/
+
+//------------------------------

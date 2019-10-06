@@ -1,0 +1,19 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+dialect "mvel"
+
+query "facts" ( Object _course, Object _id, Long _from, Long _to )
+  result: Fact( )
+end
+
+query "events" ( Object _course, Object _id, Long _from, Long _to )
+  result: Event( )
+end
+
+query "models" ( Object _course, Object _id, Long _from, Long _to )
+  result: Model( )
+end

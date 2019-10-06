@@ -1,0 +1,191 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.base.awareness.Awareness;
+import de.ikarion.xps.base.awareness.Availability;
+import de.ikarion.xps.base.awareness.Assessment;
+import de.ikarion.xps.base.awareness.Mood;
+import de.ikarion.xps.base.awareness.Todo;
+
+dialect "mvel"
+
+rule "awareness:group:forget"
+  agenda-group "progress"
+when
+  $clock: Clock ( $time: value )
+  $awareness: Awareness ( forgotten == false , group == true )
+  not ( Group( this == $awareness.parent ) )
+then
+  modify($awareness) { forget($time); }
+  update($awareness)
+  add(g, drools.getRule(), $awareness.parent)
+end
+
+rule "awareness:member:forget"
+  agenda-group "progress"
+when
+  $clock: Clock ( $time: value )
+  $awareness: Awareness ( forgotten == false , group == false )
+  not ( Member( this == $awareness.parent ) )
+then
+  modify($awareness) { forget($time); }
+  update($awareness)
+  add(g, drools.getRule(), $awareness.parent)
+end
+
+//-- LOCAL ----------------------------------------
+
+rule "event:ikarion:detect" extends "event:detect"
+  agenda-group "event"
+when
+  String ( this matches "ikarion(.){1,}" ) from $event.target
+  $member: Member ( parents contains $course , id == $event.userid )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:ikarion:local:detect" extends "event:ikarion:detect"
+  agenda-group "event"
+when
+  String ( this matches "local_ikarion" ) from $event.component
+  Boolean ( this == true ) from ( $event._name != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- TODO ----------------------------------------
+
+rule "event:ikarion:todo:detect" extends "event:ikarion:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_todo" ) from $event.component
+  Boolean ( this == true ) from ( $event._id != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:ikarion:todo:insert" extends "event:ikarion:todo:detect"
+  agenda-group "event"
+when
+  String ( this matches "added" ) from $event.action
+  $group: Group ( parents contains $course , $member memberOf members , forgotten == false )
+  not ( Todo ( parents contains $member , id == $event._id() ) )
+then
+  Todo todo = new Todo($time, $event._id(), $member, (String)$event._title(), (Boolean)$event._groupmode() ? $group : null)
+  insert(todo)
+  add(g, drools.getRule(), $event._id())
+end
+
+rule "event:ikarion:todo:change" extends "event:ikarion:todo:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){0,}checked" ) from $event.action
+  $todo: Todo ( id == $event._id , submitted($member) != $clock.value , forgotten == false )
+then
+  modify($todo) { check($time, $member, $event.action == "checked"); }
+  update($todo)
+  add(g, drools.getRule(), $event._id)
+end
+
+rule "event:ikarion:todo:forget" extends "event:ikarion:todo:detect"
+  agenda-group "event"
+when
+  String ( this matches "deleted" ) from $event.action
+  $todo: Todo ( parents contains $member , id == $event._id , forgotten == false )
+then
+  modify($todo) { forget($time); }
+  update($todo)
+  add(g, drools.getRule(), $event._id)
+end
+
+//-- MOOD ----------------------------------------
+
+rule "awareness:mood:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  not ( Mood ( parents contains $group ) )
+then
+  Mood mood = new Mood($clock, $group)
+  insert(mood)
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "event:ikarion:mood:detect" extends "event:ikarion:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_mood" ) from $event.component
+  Boolean ( this == true ) from ( $event._value != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:ikarion:mood:change" extends "event:ikarion:mood:detect"
+  agenda-group "event"
+when
+  String ( this matches "submitted" ) from $event.action
+  $group: Group ( parents contains $course , $member memberOf members , forgotten == false )
+  $mood: Mood ( parents contains $group , submitted($member) != $clock.value , forgotten == false )
+then
+  modify($mood) { value($time, $member, (Float)$event._value); }
+  update($mood)
+  add(g, drools.getRule(), $group.id)
+end
+
+//-- AVAILABILITY ----------------------------------------
+
+rule "event:ikarion:availability:detect" extends "event:ikarion:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_availability" ) from $event.component
+  Boolean ( this == true ) from ( $event._dates != null )
+  Boolean ( this == true ) from ( $event._tz != null )
+  Boolean ( this == true ) from ( $event._st != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "awareness:availability:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  not ( Availability ( parents contains $group ) )
+then
+  Availability availability = new Availability($clock, $group)
+  insert(availability)
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "event:ikarion:availability:change" extends "event:ikarion:availability:detect"
+  agenda-group "event"
+when
+  String ( this matches "submitted" ) from $event.action
+  $group: Group ( parents contains $course , $member memberOf members , forgotten == false )
+  $avail: Availability ( parents contains $group , submitted($member) != $clock.value , forgotten == false )
+then
+  modify($avail) { value($time, $member, $event._dates, (Byte)$event._tz, (Byte)$event._st); }
+  update($avail)
+  add(g, drools.getRule(), $member.id)
+end
+
+//-- PARTICIPATION ----------------------------------------
+
+rule "event:ikarion:participation:detect" extends "event:ikarion:detect"
+  agenda-group "event"
+when
+  String ( this matches "(.){1,}_participation" ) from $event.component
+  Boolean ( this == true ) from ( $event._items != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "event:ikarion:participation:insert " extends "event:ikarion:participation:detect"
+  agenda-group "event"
+when
+  not ( Assessment( parents contains $member , created == $time ) )
+then
+  Assessment assessment = new Assessment($time, $member, $event._items)
+  insert(assessment)
+  add(g, drools.getRule(), $member.id)
+end

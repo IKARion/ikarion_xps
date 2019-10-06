@@ -1,0 +1,35 @@
+package de.ikarion
+
+import de.ikarion.xps.engine.test.location.Location;
+
+dialect "mvel"
+
+query contains( String x, String y )
+    Location( x, y; )
+    or
+    ( Location( z, y; ) and contains( x, z; ) )
+end
+
+rule "location:check decision is true"
+when
+    exists ( Location () )
+    contains("Eiffel tower", "World"; )
+then
+    add(g, drools.getRule(), "Eiffel tower is in the world.");
+end
+
+rule "location:check decision is false"
+when
+    exists ( Location () )
+    not contains("Eiffel tower", "World"; )
+then
+    add(g, drools.getRule(), "Eiffel tower is not in the world.");
+end
+
+rule "location:get all facts"
+when
+    exists ( Location () )
+    contains(entity, location; )
+then
+    add(g, drools.getRule(), "Entity " + entity + " is in " + location + "." );
+end

@@ -1,0 +1,16 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import java.util.*;
+import java.lang.*;
+
+import org.drools.core.definitions.rule.impl.RuleImpl;
+
+import de.ikarion.xps.engine.Inference;
+
+global de.ikarion.xps.engine.Inference g;
+
+dialect "mvel"

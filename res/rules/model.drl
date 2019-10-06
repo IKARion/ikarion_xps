@@ -1,0 +1,385 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.data.collide.Model;
+import de.ikarion.xps.data.collide.GroupModel;
+
+import de.ikarion.xps.base.inception.Task;
+
+dialect "mvel"
+
+rule "model:discard"
+  agenda-group "model"
+  salience -1 // last rule in this agenda-group 
+when
+  $model: Model( discarded == false )
+then
+  modify($model) { discard(); }
+  add(g, drools.getRule(), null)
+end
+
+rule "model:exist"
+  agenda-group "model"
+  no-loop // (!) avoid the re-activation due to clock update
+when
+  $model: Model( discarded == false )
+  Boolean ( this == true ) from ( $model.course != null )
+  $clock: Clock( $time: value )
+  Boolean ( this == true ) from ( $time != null ) //&& $time != $clock.previous )
+then
+  modify($clock) { value($time); }
+  update($clock)
+  add(g, drools.getRule(), null)
+end
+
+//-- DETECT ----------------------------------------
+
+rule "model-group:detect" extends "model:exist"
+  agenda-group "model"
+when
+  $course: Course( id == $model.course )
+  $model_group: GroupModel( this == $model )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:task:detect" extends "model-group:detect"
+  agenda-group "model"
+when
+  $tid: Object() from $model_group.task_id
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:group:detect" extends "model-group:detect"
+  agenda-group "model"
+when
+  $gid: Object() from $model.groups
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:member:detect" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $mid: Object() from $model_group.users($gid)
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:module:detect" extends "model-group:detect"
+  agenda-group "model"
+when
+  $res: List() from $model_group.task_resources_id_type()
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:forum:detect" extends "model-group:module:detect"
+  agenda-group "model"
+when
+  Boolean ( this == true ) from ( $res.get(1) == "forum" )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:wiki:detect" extends "model-group:module:detect"
+  agenda-group "model"
+when
+  Boolean ( this == true ) from ( $res.get(1) == "wiki" )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:discussion:detect" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $par: List() from $model_group.sequence_ids_parents($gid)
+  Boolean ( this == true ) from ( $par.get(1) != null )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:content:detect" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $mod: List() from $model_group.sequence_ids_modules($gid)
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- INSERT ----------------------------------------
+
+rule "model:course:insert" extends "model:exist"
+  agenda-group "model"
+when
+  not ( Course( id == $model.course ) )
+then
+  Course course = new Course($time, $model.course)
+  insert(course)
+  add(g, drools.getRule(), $model.course)
+end
+
+rule "model-group:group:insert" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  not ( Group( parents contains $course, id == $gid ) )
+then
+  Group group = new Group($time, $gid, $course)
+  insert(group)
+  add(g, drools.getRule(), $gid)
+end
+
+rule "model-group:task:insert" extends "model-group:task:detect"
+  agenda-group "model"
+when
+//  Boolean( this == true ) from ( $time < (Long)$model.task_to )  // if commented, allow creation and instant deletion 
+  not ( Task( parents contains $course, id == $model.task_id ) )
+then
+  Task task = new Task($time, $model.task_id, $course, (Long)$model.task_from, (Long)$model.task_to)
+  insert(task)
+  add(g, drools.getRule(), $tid)
+end
+
+rule "model-group:member:insert" extends "model-group:member:detect"
+  agenda-group "model"
+when
+  not ( Member( parents contains $course , id == $mid ) )
+then
+  Member member = new Member($time, $mid, $course)
+  insert(member)
+  add(g, drools.getRule(), $mid)
+end
+
+rule "model-group:forum:insert" extends "model-group:forum:detect"
+  agenda-group "model"
+when
+  not ( Forum( $course memberOf parents , context == $res.get(0) ) )
+then
+  Forum forum = new Forum($time, $res.get(0), $course)
+  insert(forum)
+  add(g, drools.getRule(), $res.get(0))
+end
+
+rule "model-group:wiki:insert" extends "model-group:wiki:detect"
+  agenda-group "model"
+when
+  not ( Wiki( $course memberOf parents , context == $res.get(0) ) )
+then
+  Wiki wiki = new Wiki($time, $res.get(0), $course)
+  insert(wiki)
+  add(g, drools.getRule(), $res.get(0))
+end
+
+rule "model-group:discussion:insert" extends "model-group:discussion:detect"
+  agenda-group "model"
+when
+  not ( Discussion( $course memberOf parents , id == $par.get(1) ) )
+then
+  Discussion discussion = new Discussion($time, $par.get(1), $course)
+  insert(discussion)
+  add(g, drools.getRule(), $par.get(1))
+end
+
+rule "model-group:page:insert" extends "model-group:content:detect"
+  agenda-group "model"
+when
+  Boolean ( this == true ) from ( $mod.get(1) == "wiki" )
+  not ( Page( id == $mod.get(0) , $course memberOf parents ) )
+then
+  Page page = new Page($time, $mod.get(0), $course)
+  insert(page)
+  add(g, drools.getRule(), $mod.get(0))
+end
+
+rule "model-group:post:insert" extends "model-group:content:detect"
+  agenda-group "model"
+when
+  Boolean ( this == true ) from ( $mod.get(1) == "forum" )
+  not ( Post( id == $mod.get(0) , $course memberOf parents ) )
+then
+  Post post = new Post($time, $mod.get(0), $course)
+  insert(post)
+  add(g, drools.getRule(), $mod.get(0))
+end
+
+//-- UPDATE(+) ----------------------------------------
+
+rule "model-group:task:group:attach" extends "model-group:task:detect"
+  agenda-group "model"
+when
+  $gid: Object() from $model.groups
+  $group: Group ( parents contains $course , id == $gid )
+  $task: Task( parents contains $course, id == $tid , groups not contains $group )
+then
+  modify($task) { group($time, $group, false); }
+  update($task) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "model-group:group:member:attach" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $mid: Object() from $model_group.users($gid)
+  $member: Member( parents contains $course , id == $mid )
+  $group: Group( parents contains $course, id == $gid , members not contains $member )
+then
+  modify($group) { member($time, $member, false); }
+  update($group) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $member.id)
+end
+
+//-- UPDATE(-) ----------------------------------------
+
+rule "model-group:task:group:detach" extends "model-group:task:detect"
+  agenda-group "model"
+when
+  $task: Task( parents contains $course , id == $tid )
+  $groups: List() from collect( Group( parents contains $course , $model.groups contains id ) )
+  $group: Group( this not memberOf $groups , this memberOf $task.groups ) 
+then
+  modify($task) { group($time, $group, true); }
+  update($task) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "model-group:group:member:detach" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $group: Group( parents contains $course, id == $gid )
+  $members: List() from collect( Member( parents contains $course , $model_group.users($gid) contains id ) )
+  $member: Member( this not memberOf $members , this memberOf $group.members ) 
+then
+  modify($group) { member($time, $member, true); }
+  update($group) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $member.id)
+end
+
+//-- UPDATE(!) ----------------------------------------
+
+rule "model-group:discussion:assign" extends "model-group:discussion:detect" // assume modules in resources have just one (and only one) forum
+  agenda-group "model"
+when
+  $res: List() from $model_group.task_resources_id_type()
+  Boolean ( this == true ) from ( $res.get(1) == "forum" )
+  $forum: Forum ( $course memberOf parents , context == $res.get(0) )
+  $discussion: Discussion ( id == $par.get(1) , $course memberOf parents , $forum not memberOf parents ) 
+then
+  modify($discussion) { parent($time, $forum); }
+  update($discussion) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $par.get(1))
+end
+
+rule "model-group:post:assign" extends "model-group:content:detect"
+  agenda-group "model"
+when
+  $par: List() from $model_group.sequence_ids_parents($gid)
+  Boolean ( this == true ) from ( $mod.get(1) == "forum" )
+  Boolean ( this == true ) from ( $par.get(1) != null )
+  Boolean ( this == true ) from ( $par.get(0) == $mod.get(0) )
+  $discussion: Discussion ( id == $par.get(1) , $course memberOf parents ) 
+  $post: Post( id == $mod.get(0) , $course memberOf parents , $discussion not memberOf parents )
+then
+  modify($post) { parent($time, $discussion); }
+  update($post) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $mod.get(0))
+end
+
+rule "model-group:page:assign" extends "model-group:content:detect" // assume modules in resources have just one (and only one) wiki
+  agenda-group "model"
+when
+  $res: List() from $model_group.task_resources_id_type()
+  Boolean ( this == true ) from ( $res.get(1) == "wiki" )
+  $wiki: Wiki ( $course memberOf parents , context == $res.get(0) )
+  $page: Page ( id == $mod.get(0) , $course memberOf parents , $wiki not memberOf parents ) 
+then
+  modify($page) { parent($time, $wiki); }
+  update($page) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $mod.get(0))
+end
+
+//-- UPDATE(*) ----------------------------------------
+
+rule "model-group:group:gini:change" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $group: Group( parents contains $course, id == $gid )
+  $value: Object() from $model_group.gini_index($gid)
+  Boolean ( this == true ) from ( $group.annotation("gini") != $value )
+then
+  modify($group) { annotation($time, "gini", $value); }
+  update($group) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $gid)
+end
+
+rule "model-group:member:forum:change" extends "model-group:member:detect"
+  agenda-group "model"
+when
+  $member: Member( parents contains $course, id == $mid )
+  $fwc: List() from $model_group.forum_users_wordcounts($gid)
+  Boolean ( this == true ) from ( $fwc.get(0) == $mid )
+  Boolean ( this == true ) from ( $member.annotation("forum") != $fwc.get(1) )
+then
+  modify($member) { annotation($time, "forum", $fwc.get(1)); }
+  update($member) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $mid)
+end
+
+rule "model-group:member:wiki:change" extends "model-group:member:detect"
+  agenda-group "model"
+when
+  $member: Member( parents contains $course, id == $mid )
+  $wwc: List() from $model_group.wiki_users_wordcounts($gid)
+  Boolean ( this == true ) from ( $wwc.get(0) == $mid )
+  Boolean ( this == true ) from ( $member.annotation("wiki") != $wwc.get(1) )
+then
+  modify($member) { annotation($time, "wiki", $wwc.get(1)); }
+  update($member) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $mid)
+end
+
+rule "model-group:content:change" extends "model-group:content:detect"
+  agenda-group "model"
+when
+  $usr: List() from $model_group.sequence_ids_users($gid)
+  Boolean ( this == true ) from ( $usr.get(0) == $mod.get(0) )
+  $member: Member ( $course memberOf parents , id == $usr.get(1) )
+  $content: Content( id == $mod.get(0) , $course memberOf parents , members.length == 0 )
+then
+  modify($content) { value($time, $member, null); }
+  update($content) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $mod.get(0))
+end
+
+rule "model-group:content:classification:update" extends "model-group:group:detect"
+  agenda-group "model"
+when
+  $usrcls: List() from $model_group.sequence_ids_users_classes($gid)
+  $member: Member ( $course memberOf parents , id == $usrcls.get(1) )
+then
+  add(g, drools.getRule(), null)
+end
+
+rule "model-group:content:coordination:change" extends "model-group:content:classification:update"
+  agenda-group "model"
+when
+  Boolean ( this == true ) from ( "Coordination" == $usrcls.get(2) )
+  $content: Content( id == $usrcls.get(0) , $course memberOf parents , annotations("coordination") not contains $member )
+then
+  modify($content) { annotation($time, "coordination", $member); }
+  update($content) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $content.id)
+end
+
+rule "model-group:content:classification:change" extends "model-group:content:classification:update"
+  agenda-group "model"
+when
+  $content: Content( id == $usrcls.get(0) , $course memberOf parents , annotations("classification") not contains $usrcls.get(2) )
+then
+  modify($content) { annotation($time, "classification", $usrcls.get(2)); }
+  update($content) // (!) notify non-property change for inference
+  add(g, drools.getRule(), $content.id)
+end

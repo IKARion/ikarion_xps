@@ -1,0 +1,79 @@
+/*
+ * 2018, m6c7l
+ */
+
+/*
+ * http://mathforum.org/library/drmath/view/58493.html
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.engine.test.threesons.Ages
+import de.ikarion.xps.engine.test.threesons.Age
+
+dialect "mvel"
+
+/*
+ * An old man asked a mathematician to guess the ages of his three sons.
+ * 
+ * Old man said: “The product of their ages is 36.”
+ * Mathematician said: “I need more information.”
+ * 
+ * Old man said: ”Over there you can see a building. The sum of their ages equals the number of the windows in that building.”
+ * After a short while the mathematician said: “I need more information.”
+ * 
+ * Old man said: “The eldest son has blue eyes.”
+ * Mathematician said: “I got it.”
+ * 
+ * What are the ages of the three sons of the old man?
+ */
+
+// info #1
+rule "threesons:c:product of ages is 36 (info #1)"
+when
+    $a: Age( )
+    $b: Age( )
+    $c: Age( )
+    eval( $a.value * $b.value * $c.value == 36 )
+then
+    Ages ages = new Ages($a, $b, $c);
+    insert(ages);
+end
+
+// this is explicit
+rule "threesons:d:order of ages is not important"
+when
+    $a: Ages( )
+    $b: Ages( this != $a )
+    eval( $a.contains($b.ages) )
+then
+    retract($b);
+end
+
+// info #2: he didnt knew the ages, thus at least one sum is not unique
+rule "threesons:u:sum of ages equals number of windows"
+when
+    $a: Ages( correct == false )
+    $b: Ages( this != $a )
+    eval( $a.sum == $b.sum )
+then
+    $a.correct = true;
+    update($a);
+end
+
+// info #3: maximum age is unique
+rule "threesons:d:eldest son has blue eyes"
+when
+    $ages: Ages( correct == true )
+    eval( $ages.ages[2] <= $ages.ages[1] )
+then
+    retract($ages);
+end
+
+rule "threesons:r:answer"
+salience -100
+when
+    $ages: Ages( correct == true )
+then
+    add(g, drools.getRule(), $ages);
+end

@@ -1,0 +1,123 @@
+/*
+ * 2018, m6c7l
+ */
+
+package de.ikarion
+
+import de.ikarion.xps.base.prompt.Prompt;
+import de.ikarion.xps.base.prompt.Display;
+import de.ikarion.xps.base.prompt.Preparation;
+
+dialect "mvel"
+
+rule "prompt:update"
+  agenda-group "progress"
+when
+  $clock: Clock ( )
+  $course: Course ( )
+  $member: Member ( parents contains $course , changed == $clock.previous , forgotten == false ) // member did action or view
+  $group: Group ( parents contains $course , $member memberOf members , forgotten == false )
+  $task: Task ( parents contains $course , groups contains $group , forgotten == false )
+then
+  add(g, drools.getRule(), null)
+end
+
+//-- PREPARATION ----------------------------------------
+
+rule "prompt:preparation:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  not ( Preparation ( parent == $group ) )
+then
+  Preparation preparation = new Preparation($clock, $group)
+  insert(preparation)
+  add(g, drools.getRule(), $group.id)
+end
+
+rule "prompt:preparation:change" extends "prompt:update"
+  agenda-group "progress"
+when
+  $preparation: Preparation ( parent == $group , changed != $clock.value , forgotten == false )
+  /*$group_member: Member ( ) from $group.members*/
+  $contents: List ( ) from collect ( Content ( annotations("coordination") contains $member /*$group_member*/ , forgotten == false ) )
+then
+  modify($preparation) { apply($task, $contents); }
+  update($preparation)
+  add(g, drools.getRule(), $group.id)
+end
+
+//-- DISPLAY ----------------------------------------
+
+rule "prompt:display:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  $member: Member ( forgotten == false ) from $group.members
+  not ( Display ( parent == $member ) )
+then
+  Display display = new Display($clock, $member)
+  insert(display)
+  add(g, drools.getRule(), $member.id)
+end
+
+rule "prompt:display:assessment:change" extends "prompt:update"
+  agenda-group "progress"
+when 
+  $display: Display ( parent == $member , changed != $clock.value , forgotten == false )
+  $assessments: List ( ) from collect ( Assessment ( parent == $member , forgotten == false ) )
+then
+  modify($display) { assessment($task, $assessments); }
+  update($display)
+  add(g, drools.getRule(), $member.id)
+end
+
+//-- PROMPT ----------------------------------------
+
+rule "prompt:group:forget"
+  agenda-group "progress"
+when
+  $clock: Clock ( $time: value )
+  $prompt: Prompt ( forgotten == false , group == true )
+  not ( Group( this == $prompt.parent ) )
+then
+  modify($prompt) { forget($time); }
+  update($prompt)
+  add(g, drools.getRule(), $prompt.parent)
+end
+
+rule "prompt:member:forget"
+  agenda-group "progress"
+when
+  $clock: Clock ( $time: value )
+  $prompt: Prompt ( forgotten == false , group == false )
+  not ( Member ( this == $prompt.parent ) )
+then
+  modify($prompt) { forget($time); }
+  update($prompt)
+  add(g, drools.getRule(), $prompt.parent)
+end
+
+//==================================================
+
+/*
+rule "prompt:participation:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  not ( Participation( id == $group ) )
+then
+  System.err.println("rule:participation:insert " + $group.id + " " + $course.id)
+  Participation participation = new Participation($clock, $group)
+  insert(participation)
+  add(g, drools.getRule())
+end
+
+rule "prompt:response:insert" extends "progress:main"
+  agenda-group "progress"
+when
+  not ( Response( id == $group ) )
+then
+  System.err.println("rule:response:insert " + $group.id + " " + $course.id)
+  Response response = new Response($clock, $group)
+  insert(response)
+  add(g, drools.getRule())
+end
+*/
